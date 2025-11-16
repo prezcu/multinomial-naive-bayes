@@ -8,7 +8,7 @@ Acesta este un proiect care implementează un clasificator de sentimente **Multi
 
 Scriptul încarcă un set de date (CSV), îl curăță de cuvinte nefolositoare pentru clasificare (stop words), apoi îl împarte într-un set de antrenament (80%) și unul de test (20%).
 
-Folosind setul de antrenament, "antrenează" un model bayesian naiv. Acest proces implică calcularea probabilităților ca anumite cuvinte să apară în review-uri pozitive versus negative.
+Folosind setul de antrenament, antrenează un model bayesian naiv. Acest proces implică calcularea probabilităților ca anumite cuvinte să apară în review-uri pozitive versus negative.
 
 Apoi, scriptul folosește modelul antrenat pentru a prezice sentimentul fiecărui review din setul de test și raportează acuratețea finală a modelului.
 
@@ -16,7 +16,7 @@ Apoi, scriptul folosește modelul antrenat pentru a prezice sentimentul fiecăru
 
 ## 2. Modelul Matematic
 
-Modelul se bazează pe **Teorema lui Bayes** cu ipoteza "naivă" că toate cuvintele dintr-un document sunt independente.
+Modelul se bazează pe **Teorema lui Bayes** cu ipoteza că toate cuvintele dintr-un document sunt independente.
 
 Vrem să găsim categoria (sentimentul $C$) care are probabilitatea cea mai mare, dat fiind documentul (care conține cuvintele $W$):
 
