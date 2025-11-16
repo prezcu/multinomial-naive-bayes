@@ -94,7 +94,7 @@ Funcția principală care execută întregul proces:
 
 ### Rulare
 1.  Asigură-te că `IMDB_cleaned.csv` este în același folder cu scriptul Python.
-2.  Rulează scriptul din terminal:
+2.  Rulează scriptul din terminal
 
-```bash
-python clasificator.py
+## 6. Bibliografie
+* https://nlp.stanford.edu/IR-book/html/htmledition/naive-bayes-text-classification-1.html
