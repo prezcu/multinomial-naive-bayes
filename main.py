@@ -1,22 +1,27 @@
 import pandas as pd
-from collections import defaultdict
 import math
+from sklearn.metrics import classification_report, confusion_matrix
 
 
 ALPHA = 1
+RANDOM_SEED = 42
 
 stop_words = {'other', 'he', 'she', 'is', 'when', 'there', 'was', 'before', 'too', 'do', 'what', 'or', 'after'
-    , 'we', 'them', 'his', 'their', 'had', 'will', 'have', 'does', 'thirs', 'being', 'did', 'the', 's', 'it'
+    , 'we', 'them', 'his', 'their', 'had', 'will', 'have', 'does', 'theirs', 'being', 'did', 'the', 's', 'it'
     , 'yours', 'those', 'shan', 'd', 'at', 'me', 'i', 't', 'of', 'they', 'would', 'and', 'you', 'o'
-    , 'are', 'by', 'our', 'here', 'own', 'as', 'ours', 'while', 'where', 'from', 'had', 'ourselves', 'himself'
-    , 'himself', 'were', 'now', 'between', 'him', 'than', 'yourself', 'will', 'in', 'your', 'that', 'this'
-    , 'does', 'which', 'for', 'itself', 'having', 'herself', 'to', 'with', 'an', 'its', 'been', 'on', 'who'
-    , 'each', 'once', 'then', 'has', 'have', 'my', 'does', 'some', 'how', 'a', 'am', 'but', 'be', 'if', 'out', 'her'
+    , 'are', 'by', 'our', 'here', 'own', 'as', 'ours', 'while', 'where', 'from', 'ourselves', 'himself'
+    , 'were', 'now', 'between', 'him', 'than', 'yourself', 'in', 'your', 'that', 'this'
+    , 'which', 'for', 'itself', 'having', 'herself', 'to', 'with', 'an', 'its', 'been', 'on', 'who'
+    , 'each', 'once', 'then', 'has', 'my', 'some', 'how', 'a', 'am', 'be', 'if', 'out', 'her'
     , 'up', 'because', 'could', 'get', 'any', 'also'
-    , 'film', 'movie', 'good', 'great', 'love', 'best', 'bad', 'off', 'never', 'films', 'nothing'}
+    , 'film', 'movie', 'films'}
+
+# Cuvinte cu sentiment puternic, negatie sau contrast. Versiunea initiala le elimina ca stop words;
+# le pastram separat ca sa putem compara acuratetea cu si fara ele.
+sentiment_words = {'good', 'great', 'love', 'best', 'bad', 'never', 'nothing', 'but', 'off'}
 
 
-def preprocess_text(text):
+def preprocess_text(text, stop_words=stop_words):
     """Eliminam stopwords din text"""
     if not isinstance(text, str):
         return []
@@ -38,9 +43,9 @@ class ClasificatorBayesian:
         self.vocabular = 0
         self.total_words = None
 
-        self.prob_positive = defaultdict(list)
+        self.prob_positive = {}
         self.laplace_positive = 0
-        self.prob_negative = defaultdict(list)
+        self.prob_negative = {}
         self.laplace_negative = 0
 
     def fit(self, train_df):
@@ -65,21 +70,23 @@ class ClasificatorBayesian:
         words_positive = train_df.loc[train_df['sentiment'] == "positive"]['tokens']
         word_count_positive = words_positive.explode().value_counts()
 
-        self.prob_positive = defaultdict(list)  # Resetam
-        self.laplace_positive = self.ALPHA / (self.total_words['positive'] + self.vocabular)
+        self.prob_positive = {}  # Resetam
+        numitor_positive = self.total_words['positive'] + self.ALPHA * self.vocabular
+        self.laplace_positive = self.ALPHA / numitor_positive
 
         for label, value in word_count_positive.items():
-            self.prob_positive[label] = (value + self.ALPHA) / (self.total_words['positive'] + self.vocabular)
+            self.prob_positive[label] = (value + self.ALPHA) / numitor_positive
 
         # Calculam probabilitatile cuvintelor din review-uri negative.
         words_negative = train_df.loc[train_df['sentiment'] == "negative"]['tokens']
         word_count_negative = words_negative.explode().value_counts()
 
-        self.prob_negative = defaultdict(list)  # Resetam
-        self.laplace_negative = self.ALPHA / (self.total_words['negative'] + self.vocabular)
+        self.prob_negative = {}  # Resetam
+        numitor_negative = self.total_words['negative'] + self.ALPHA * self.vocabular
+        self.laplace_negative = self.ALPHA / numitor_negative
 
         for label, value in word_count_negative.items():
-            self.prob_negative[label] = (value + self.ALPHA) / (self.total_words['negative'] + self.vocabular)
+            self.prob_negative[label] = (value + self.ALPHA) / numitor_negative
 
         print("Fit complet.")
 
@@ -102,12 +109,18 @@ class ClasificatorBayesian:
             scor_neg = math.log(self.class_priors['negative'])
 
             for word in review.tokens:
+                # Cuvintele care nu apar deloc in setul de antrenament nu ne spun nimic despre clasa.
+                # Daca le-am da probabilitatea Laplace, ar impinge scorul spre clasa cu mai putine
+                # cuvinte (N_C mai mic), deci le ignoram.
+                if word not in self.prob_positive and word not in self.prob_negative:
+                    continue
+
                 # Scorul pozitiv
                 p_pos = self.prob_positive.get(word)
                 if p_pos is not None:
                     scor_pos += math.log(p_pos)
                 else:
-                    # Cuvantul nu a fost gasit, folosim Laplace.
+                    # Cuvantul apare doar in review-uri negative, folosim Laplace.
                     scor_pos += math.log(self.laplace_positive)
 
                 # Scorul negativ
@@ -115,34 +128,48 @@ class ClasificatorBayesian:
                 if p_neg is not None:
                     scor_neg += math.log(p_neg)
                 else:
-                    # Cuvantul nu a fost gasit, folosim Laplace.
+                    # Cuvantul apare doar in review-uri pozitive, folosim Laplace.
                     scor_neg += math.log(self.laplace_negative)
 
-            # Scorurile sumei de logaritmi este negativ, scorul mai aproape de 0 este mai mare.
-            rezultat = 'positive' if abs(scor_pos) < abs(scor_neg) else 'negative'
+            # Alegem clasa cu log-probabilitatea mai mare (mai aproape de 0).
+            rezultat = 'positive' if scor_pos > scor_neg else 'negative'
             predictii.append(rezultat)
 
         return predictii
 
 
 
-def main():
-
-    try:
-        df = pd.read_csv("IMDB_cleaned.csv", usecols=['cleaned_review', 'sentiment'])
-    except FileNotFoundError:
-        print("Eroare: IMDB_cleaned.csv nu a fost gasit.")
-        return
-
-    # Preprocesare
+def load_and_split(path="IMDB_cleaned.csv", seed=RANDOM_SEED):
+    """Incarca datele si le imparte 80/20 in train/test, reproductibil prin seed."""
+    df = pd.read_csv(path, usecols=['cleaned_review', 'sentiment'])
     df = df.dropna(subset=['cleaned_review'])
-    df['tokens'] = df['cleaned_review'].apply(preprocess_text)
+    # Eliminam review-urile duplicate, altfel acelasi review poate ajunge si in train si in test.
+    df = df.drop_duplicates(subset='cleaned_review')
 
-    # Train-Test Split
-    df_shuffled = df.sample(frac=1)
+    df_shuffled = df.sample(frac=1, random_state=seed)
     training_size = int(len(df_shuffled) * 0.8)
-    train_df = df_shuffled.iloc[:training_size]
-    test_df = df_shuffled.iloc[training_size:]
+    train_df = df_shuffled.iloc[:training_size].copy()
+    test_df = df_shuffled.iloc[training_size:].copy()
+    return train_df, test_df
+
+
+def raport_detaliat(true_labels, predictii, train_labels):
+    """Afiseaza baseline-ul (clasa majoritara), matricea de confuzie si precision/recall/F1."""
+    clasa_majoritara = train_labels.value_counts().idxmax()
+    acc_baseline = (true_labels == clasa_majoritara).mean()
+    print(f"Baseline (prezice mereu '{clasa_majoritara}'): {acc_baseline:.4f}")
+
+    etichete = ['negative', 'positive']
+    print("Matrice de confuzie (randuri = real, coloane = prezis):")
+    print(pd.DataFrame(confusion_matrix(true_labels, predictii, labels=etichete),
+                       index=etichete, columns=etichete))
+    print(classification_report(true_labels, predictii, labels=etichete, digits=4))
+
+
+def evalueaza(train_df, test_df, stop_words, raport=False):
+    """Tokenizeaza cu lista de stop words data, antreneaza modelul si returneaza acuratetea."""
+    train_df['tokens'] = train_df['cleaned_review'].apply(preprocess_text, stop_words=stop_words)
+    test_df['tokens'] = test_df['cleaned_review'].apply(preprocess_text, stop_words=stop_words)
 
     # Initializare si fit model
     model = ClasificatorBayesian(alpha=ALPHA)
@@ -158,10 +185,32 @@ def main():
 
     print(f"Total corecte:{total_corecte}")
     print(f"Total teste:{total_test}")
-    if total_test > 0:
-        print(f"Corectitudine model:{total_corecte / total_test:.4f}")
-    else:
+
+    if raport:
+        raport_detaliat(true_labels.values, predictii, train_df['sentiment'])
+
+    return total_corecte / total_test
+
+
+def main():
+
+    try:
+        train_df, test_df = load_and_split()
+    except FileNotFoundError:
+        print("Eroare: IMDB_cleaned.csv nu a fost gasit.")
+        return
+
+    if len(test_df) == 0:
         print("Nu exista date care sa fie evaluate.")
+        return
+
+    print("--- Stop words fara cuvinte de sentiment ---")
+    acc = evalueaza(train_df, test_df, stop_words, raport=True)
+    print(f"Corectitudine model:{acc:.4f}\n")
+
+    print("--- Stop words cu cuvinte de sentiment eliminate (versiunea initiala) ---")
+    acc_initial = evalueaza(train_df, test_df, stop_words | sentiment_words)
+    print(f"Corectitudine model:{acc_initial:.4f}")
 
 
 if __name__ == "__main__":

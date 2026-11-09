@@ -32,10 +32,13 @@ $$P(W | C) \approx \prod_{i=1}^{n} P(w_i | C)$$
     * **Soluție**: Folosim logaritmi. $\log(a \cdot b) = \log(a) + \log(b)$. Căutăm scorul care maximizează:
         $$\log(P(C)) + \sum_{i=1}^{n} \log(P(w_i | C))$$
 
-2.  Un cuvânt din test care nu a fost în setul de antrenament ar avea probabilitatea 0, anulând tot scorul.
+2.  Un cuvânt care a apărut în antrenament doar într-o clasă ar avea probabilitatea 0 în cealaltă, anulând tot scorul.
     * **Soluție**: **Netezirea Laplace (Additive Smoothing)**. Adăugăm o constantă `ALPHA` (aici, `ALPHA = 1`) la fiecare numărător. Formula devine:
-        $$P(w_i | C) = \frac{\text{count}(w_i, C) + \alpha}{N_C + V}$$
+        $$P(w_i | C) = \frac{\text{count}(w_i, C) + \alpha}{N_C + \alpha V}$$
         unde $N_C$ este numărul total de cuvinte din clasa $C$ și $V$ este mărimea vocabularului (numărul total de cuvinte distincte din setul de date de antrenament).
+
+3.  Un cuvânt din test care nu a apărut deloc în setul de antrenament nu spune nimic despre clasă. Dacă i-am da probabilitatea Laplace $\alpha / (N_C + \alpha V)$, ar împinge scorul spre clasa cu $N_C$ mai mic.
+    * **Soluție**: ignorăm cuvintele care nu sunt în vocabular (la fel face și scikit-learn).
 
 ---
 
@@ -43,9 +46,9 @@ $$P(W | C) \approx \prod_{i=1}^{n} P(w_i | C)$$
 
 Scriptul este împărțit în trei părți principale:
 
-### `preprocess_text(text)`
+### `preprocess_text(text, stop_words)`
 * O funcție ajutătoare care primește un string.
-* Îl împarte în cuvinte și elimină toate cuvintele definite în lista globală `stop_words`.
+* Îl împarte în cuvinte și elimină toate cuvintele din setul `stop_words` primit (implicit, lista globală `stop_words`).
 * Returnează o listă de token-uri (cuvinte).
 
 ### `ClasificatorBayesian`
@@ -63,14 +66,15 @@ O clasă care încapsulează logica modelului.
     3.  Alege clasa cu scorul logaritmic mai mare (cel mai apropiat de 0).
     4.  Returnează o listă de predicții.
 
-### `main()`
-Funcția principală care execută întregul proces:
-1.  **Încarcă datele**: `pd.read_csv("IMDB_cleaned.csv")`
-2.  **Preprocesează**: `df.dropna(...)`, `df.apply(preprocess_text)`
-3.  **Împarte datele**: `df.sample(frac=1)` și `df.iloc[...]` pentru a obține `train_df` (80%) și `test_df` (20%).
+### `load_and_split()`, `evalueaza()` și `main()`
+1.  **Încarcă datele** (`load_and_split`): `pd.read_csv("IMDB_cleaned.csv")`, `df.dropna(...)`, `df.drop_duplicates(...)` (3 review-uri duplicate, care altfel puteau ajunge și în train și în test)
+2.  **Împarte datele** (`load_and_split`): `df.sample(frac=1, random_state=42)` și `df.iloc[...]` pentru a obține `train_df` (80%) și `test_df` (20%). Seed-ul fix face ca rezultatele să fie reproductibile.
+3.  **Preprocesează** (`evalueaza`): `df.apply(preprocess_text)` cu lista de stop words primită.
 4.  **Antrenează**: `model = ClasificatorBayesian()`, `model.fit(train_df)`
 5.  **Prezice**: `predictii = model.predict(test_df)`
-6.  **Evaluează**: Compară `predictii` cu etichetele reale din `test_df` și afișează acuratețea.
+6.  **Evaluează**: Compară `predictii` cu etichetele reale din `test_df` și returnează acuratețea.
+
+`main()` rulează `evalueaza` de două ori pe același split: o dată cu lista de stop words actuală și o dată cu lista inițială, care elimina și cuvintele de sentiment (vezi secțiunea 6).
 
 ---
 
@@ -89,12 +93,61 @@ Funcția principală care execută întregul proces:
 ### Cerințe
 * Python 3
 * Pandas (`pip install pandas`)
+* scikit-learn, pentru metricile de evaluare și pentru `compare_sklearn.py` (`pip install scikit-learn`)
 * Fișierul `IMDB_cleaned.csv` (trebuie să conțină coloanele `cleaned_review` și `sentiment`).
 * Link pentru setul de date folosit: https://www.kaggle.com/datasets/ibrahimqasimi/imdb-50k-cleaned-movie-reviews/data
+* Rezultatele de mai jos sunt obținute pe un fișier `IMDB_cleaned.csv` de 5.000 de review-uri (2.532 negative, 2.468 pozitive). După eliminarea duplicatelor rămân 4.997, iar setul de test are 1.000 de review-uri.
 
 ### Rulare
 1.  Asigură-te că `IMDB_cleaned.csv` este în același folder cu scriptul Python.
-2.  Rulează scriptul din terminal
+2.  Rulează scriptul din terminal: `python main.py`
+3.  Opțional, validarea cu scikit-learn: `python compare_sklearn.py`
 
-## 6. Bibliografie
+## 6. Rezultate
+
+Toate rezultatele sunt pe split-ul 80/20 cu `random_state=42` (3.997 review-uri de antrenament, 1.000 de test).
+
+### Stop words: impactul cuvintelor de sentiment
+
+Versiunea inițială a listei de stop words elimina și cuvinte ca `good`, `great`, `love`, `best`, `bad`, `never`, `nothing`, care sunt printre cele mai puternice semnale de sentiment din review-uri, și cuvinte de contrast precum `but`. Le-am scos din listă și am comparat:
+
+| Variantă | Acuratețe (seed 42) | Media pe 10 seed-uri (0–9) |
+|---|---|---|
+| Cu cuvintele de sentiment păstrate (actual) | **83,8%** | 83,4% |
+| Cu cuvintele de sentiment eliminate (inițial) | 83,2% | 82,6% |
+
+Câștigul e mic (+0,8 puncte procentuale în medie), dar consecvent: varianta actuală a fost mai bună în 9 din 10 split-uri. Diferența e mică pentru că modelul are multe alte cuvinte cu sentiment puternic (`excellent`, `worst`, `waste` etc.), deci eliminarea câtorva nu îl afectează mult.
+
+### Metrici detaliate (seed 42, varianta actuală)
+
+| | Precision | Recall | F1 |
+|---|---|---|---|
+| negative | 81,4% | 87,3% | 84,2% |
+| positive | 86,5% | 80,4% | 83,3% |
+
+Baseline-ul care prezice mereu clasa majoritară din antrenament (`negative`) are 49,6% acuratețe, deci modelul (83,8%) e cu ~34 de puncte peste.
+
+Matricea de confuzie (rânduri = real, coloane = prezis):
+
+| | negative | positive |
+|---|---|---|
+| **negative** | 433 | 63 |
+| **positive** | 99 | 405 |
+
+Modelul greșește mai des review-urile pozitive (99 clasificate ca negative) decât invers (63).
+
+### Validare cu scikit-learn
+
+`compare_sklearn.py` antrenează `sklearn.naive_bayes.MultinomialNB(alpha=1)` pe aceleași token-uri și același split:
+
+| Model | Acuratețe |
+|---|---|
+| Implementarea proprie | 83,8% |
+| sklearn `MultinomialNB` | 83,8% |
+
+Predicțiile sunt identice pentru toate cele 1.000 de review-uri. Înainte să ignorăm cuvintele care nu apar în setul de antrenament (punctul 3 din secțiunea 2), 5 predicții difereau de sklearn.
+
+---
+
+## 7. Bibliografie
 * https://nlp.stanford.edu/IR-book/html/htmledition/naive-bayes-text-classification-1.html
