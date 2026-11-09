@@ -70,20 +70,22 @@ class ClasificatorBayesian:
         word_count_positive = words_positive.explode().value_counts()
 
         self.prob_positive = {}  # Resetam
-        self.laplace_positive = self.ALPHA / (self.total_words['positive'] + self.vocabular)
+        numitor_positive = self.total_words['positive'] + self.ALPHA * self.vocabular
+        self.laplace_positive = self.ALPHA / numitor_positive
 
         for label, value in word_count_positive.items():
-            self.prob_positive[label] = (value + self.ALPHA) / (self.total_words['positive'] + self.vocabular)
+            self.prob_positive[label] = (value + self.ALPHA) / numitor_positive
 
         # Calculam probabilitatile cuvintelor din review-uri negative.
         words_negative = train_df.loc[train_df['sentiment'] == "negative"]['tokens']
         word_count_negative = words_negative.explode().value_counts()
 
         self.prob_negative = {}  # Resetam
-        self.laplace_negative = self.ALPHA / (self.total_words['negative'] + self.vocabular)
+        numitor_negative = self.total_words['negative'] + self.ALPHA * self.vocabular
+        self.laplace_negative = self.ALPHA / numitor_negative
 
         for label, value in word_count_negative.items():
-            self.prob_negative[label] = (value + self.ALPHA) / (self.total_words['negative'] + self.vocabular)
+            self.prob_negative[label] = (value + self.ALPHA) / numitor_negative
 
         print("Fit complet.")
 
@@ -106,12 +108,18 @@ class ClasificatorBayesian:
             scor_neg = math.log(self.class_priors['negative'])
 
             for word in review.tokens:
+                # Cuvintele care nu apar deloc in setul de antrenament nu ne spun nimic despre clasa.
+                # Daca le-am da probabilitatea Laplace, ar impinge scorul spre clasa cu mai putine
+                # cuvinte (N_C mai mic), deci le ignoram.
+                if word not in self.prob_positive and word not in self.prob_negative:
+                    continue
+
                 # Scorul pozitiv
                 p_pos = self.prob_positive.get(word)
                 if p_pos is not None:
                     scor_pos += math.log(p_pos)
                 else:
-                    # Cuvantul nu a fost gasit, folosim Laplace.
+                    # Cuvantul apare doar in review-uri negative, folosim Laplace.
                     scor_pos += math.log(self.laplace_positive)
 
                 # Scorul negativ
@@ -119,7 +127,7 @@ class ClasificatorBayesian:
                 if p_neg is not None:
                     scor_neg += math.log(p_neg)
                 else:
-                    # Cuvantul nu a fost gasit, folosim Laplace.
+                    # Cuvantul apare doar in review-uri pozitive, folosim Laplace.
                     scor_neg += math.log(self.laplace_negative)
 
             # Alegem clasa cu log-probabilitatea mai mare (mai aproape de 0).

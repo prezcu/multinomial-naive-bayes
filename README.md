@@ -32,10 +32,13 @@ $$P(W | C) \approx \prod_{i=1}^{n} P(w_i | C)$$
     * **Soluție**: Folosim logaritmi. $\log(a \cdot b) = \log(a) + \log(b)$. Căutăm scorul care maximizează:
         $$\log(P(C)) + \sum_{i=1}^{n} \log(P(w_i | C))$$
 
-2.  Un cuvânt din test care nu a fost în setul de antrenament ar avea probabilitatea 0, anulând tot scorul.
+2.  Un cuvânt care a apărut în antrenament doar într-o clasă ar avea probabilitatea 0 în cealaltă, anulând tot scorul.
     * **Soluție**: **Netezirea Laplace (Additive Smoothing)**. Adăugăm o constantă `ALPHA` (aici, `ALPHA = 1`) la fiecare numărător. Formula devine:
-        $$P(w_i | C) = \frac{\text{count}(w_i, C) + \alpha}{N_C + V}$$
+        $$P(w_i | C) = \frac{\text{count}(w_i, C) + \alpha}{N_C + \alpha V}$$
         unde $N_C$ este numărul total de cuvinte din clasa $C$ și $V$ este mărimea vocabularului (numărul total de cuvinte distincte din setul de date de antrenament).
+
+3.  Un cuvânt din test care nu a apărut deloc în setul de antrenament nu spune nimic despre clasă. Dacă i-am da probabilitatea Laplace $\alpha / (N_C + \alpha V)$, ar împinge scorul spre clasa cu $N_C$ mai mic.
+    * **Soluție**: ignorăm cuvintele care nu sunt în vocabular (la fel face și scikit-learn).
 
 ---
 
@@ -110,7 +113,7 @@ Versiunea inițială a listei de stop words elimina și cuvinte ca `good`, `grea
 
 | Variantă | Acuratețe (seed 42) | Media pe 10 seed-uri (0–9) |
 |---|---|---|
-| Cu cuvintele de sentiment păstrate (actual) | **84,1%** | 83,5% |
+| Cu cuvintele de sentiment păstrate (actual) | **84,0%** | 83,5% |
 | Cu cuvintele de sentiment eliminate (inițial) | 83,0% | 82,8% |
 
 Câștigul e mic (+0,7 puncte procentuale în medie), dar consecvent: varianta actuală a fost mai bună în 9 din 10 split-uri și egală în al zecelea. Diferența e mică pentru că modelul are multe alte cuvinte cu sentiment puternic (`excellent`, `worst`, `waste` etc.), deci eliminarea câtorva nu îl afectează mult.
@@ -121,10 +124,10 @@ Câștigul e mic (+0,7 puncte procentuale în medie), dar consecvent: varianta a
 
 | Model | Acuratețe |
 |---|---|
-| Implementarea proprie | 84,1% |
+| Implementarea proprie | 84,0% |
 | sklearn `MultinomialNB` | 84,0% |
 
-Predicțiile sunt identice pentru 995 din 1.000 de review-uri. Cele 5 diferențe vin din tratarea cuvintelor care nu apar deloc în setul de antrenament: sklearn le ignoră, iar implementarea proprie le atribuie probabilitatea Laplace $lpha / (N_C + V)$. Deoarece $N_C$ diferă între clase, fiecare cuvânt necunoscut împinge ușor scorul spre o clasă. Am verificat că, dacă ignorăm aceste cuvinte, predicțiile coincid 100% cu sklearn.
+Predicțiile sunt identice pentru toate cele 1.000 de review-uri. Înainte să ignorăm cuvintele care nu apar în setul de antrenament (punctul 3 din secțiunea 2), 5 predicții difereau de sklearn.
 
 ---
 
