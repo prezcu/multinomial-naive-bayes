@@ -1,5 +1,6 @@
 import pandas as pd
 import math
+from sklearn.metrics import classification_report, confusion_matrix
 
 
 ALPHA = 1
@@ -11,13 +12,13 @@ stop_words = {'other', 'he', 'she', 'is', 'when', 'there', 'was', 'before', 'too
     , 'are', 'by', 'our', 'here', 'own', 'as', 'ours', 'while', 'where', 'from', 'ourselves', 'himself'
     , 'were', 'now', 'between', 'him', 'than', 'yourself', 'in', 'your', 'that', 'this'
     , 'which', 'for', 'itself', 'having', 'herself', 'to', 'with', 'an', 'its', 'been', 'on', 'who'
-    , 'each', 'once', 'then', 'has', 'my', 'some', 'how', 'a', 'am', 'but', 'be', 'if', 'out', 'her'
+    , 'each', 'once', 'then', 'has', 'my', 'some', 'how', 'a', 'am', 'be', 'if', 'out', 'her'
     , 'up', 'because', 'could', 'get', 'any', 'also'
-    , 'film', 'movie', 'off', 'films'}
+    , 'film', 'movie', 'films'}
 
-# Cuvinte cu sentiment puternic. Versiunea initiala le elimina ca stop words;
+# Cuvinte cu sentiment puternic, negatie sau contrast. Versiunea initiala le elimina ca stop words;
 # le pastram separat ca sa putem compara acuratetea cu si fara ele.
-sentiment_words = {'good', 'great', 'love', 'best', 'bad', 'never', 'nothing'}
+sentiment_words = {'good', 'great', 'love', 'best', 'bad', 'never', 'nothing', 'but', 'off'}
 
 
 def preprocess_text(text, stop_words=stop_words):
@@ -142,6 +143,8 @@ def load_and_split(path="IMDB_cleaned.csv", seed=RANDOM_SEED):
     """Incarca datele si le imparte 80/20 in train/test, reproductibil prin seed."""
     df = pd.read_csv(path, usecols=['cleaned_review', 'sentiment'])
     df = df.dropna(subset=['cleaned_review'])
+    # Eliminam review-urile duplicate, altfel acelasi review poate ajunge si in train si in test.
+    df = df.drop_duplicates(subset='cleaned_review')
 
     df_shuffled = df.sample(frac=1, random_state=seed)
     training_size = int(len(df_shuffled) * 0.8)
@@ -150,7 +153,20 @@ def load_and_split(path="IMDB_cleaned.csv", seed=RANDOM_SEED):
     return train_df, test_df
 
 
-def evalueaza(train_df, test_df, stop_words):
+def raport_detaliat(true_labels, predictii, train_labels):
+    """Afiseaza baseline-ul (clasa majoritara), matricea de confuzie si precision/recall/F1."""
+    clasa_majoritara = train_labels.value_counts().idxmax()
+    acc_baseline = (true_labels == clasa_majoritara).mean()
+    print(f"Baseline (prezice mereu '{clasa_majoritara}'): {acc_baseline:.4f}")
+
+    etichete = ['negative', 'positive']
+    print("Matrice de confuzie (randuri = real, coloane = prezis):")
+    print(pd.DataFrame(confusion_matrix(true_labels, predictii, labels=etichete),
+                       index=etichete, columns=etichete))
+    print(classification_report(true_labels, predictii, labels=etichete, digits=4))
+
+
+def evalueaza(train_df, test_df, stop_words, raport=False):
     """Tokenizeaza cu lista de stop words data, antreneaza modelul si returneaza acuratetea."""
     train_df['tokens'] = train_df['cleaned_review'].apply(preprocess_text, stop_words=stop_words)
     test_df['tokens'] = test_df['cleaned_review'].apply(preprocess_text, stop_words=stop_words)
@@ -169,6 +185,10 @@ def evalueaza(train_df, test_df, stop_words):
 
     print(f"Total corecte:{total_corecte}")
     print(f"Total teste:{total_test}")
+
+    if raport:
+        raport_detaliat(true_labels.values, predictii, train_df['sentiment'])
+
     return total_corecte / total_test
 
 
@@ -185,7 +205,7 @@ def main():
         return
 
     print("--- Stop words fara cuvinte de sentiment ---")
-    acc = evalueaza(train_df, test_df, stop_words)
+    acc = evalueaza(train_df, test_df, stop_words, raport=True)
     print(f"Corectitudine model:{acc:.4f}\n")
 
     print("--- Stop words cu cuvinte de sentiment eliminate (versiunea initiala) ---")

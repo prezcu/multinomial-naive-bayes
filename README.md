@@ -67,7 +67,7 @@ O clasă care încapsulează logica modelului.
     4.  Returnează o listă de predicții.
 
 ### `load_and_split()`, `evalueaza()` și `main()`
-1.  **Încarcă datele** (`load_and_split`): `pd.read_csv("IMDB_cleaned.csv")`, `df.dropna(...)`
+1.  **Încarcă datele** (`load_and_split`): `pd.read_csv("IMDB_cleaned.csv")`, `df.dropna(...)`, `df.drop_duplicates(...)` (3 review-uri duplicate, care altfel puteau ajunge și în train și în test)
 2.  **Împarte datele** (`load_and_split`): `df.sample(frac=1, random_state=42)` și `df.iloc[...]` pentru a obține `train_df` (80%) și `test_df` (20%). Seed-ul fix face ca rezultatele să fie reproductibile.
 3.  **Preprocesează** (`evalueaza`): `df.apply(preprocess_text)` cu lista de stop words primită.
 4.  **Antrenează**: `model = ClasificatorBayesian()`, `model.fit(train_df)`
@@ -93,10 +93,10 @@ O clasă care încapsulează logica modelului.
 ### Cerințe
 * Python 3
 * Pandas (`pip install pandas`)
-* scikit-learn, doar pentru `compare_sklearn.py` (`pip install scikit-learn`)
+* scikit-learn, pentru metricile de evaluare și pentru `compare_sklearn.py` (`pip install scikit-learn`)
 * Fișierul `IMDB_cleaned.csv` (trebuie să conțină coloanele `cleaned_review` și `sentiment`).
 * Link pentru setul de date folosit: https://www.kaggle.com/datasets/ibrahimqasimi/imdb-50k-cleaned-movie-reviews/data
-* Rezultatele de mai jos sunt obținute pe un fișier `IMDB_cleaned.csv` de 5.000 de review-uri (2.532 negative, 2.468 pozitive), deci setul de test are 1.000 de review-uri.
+* Rezultatele de mai jos sunt obținute pe un fișier `IMDB_cleaned.csv` de 5.000 de review-uri (2.532 negative, 2.468 pozitive). După eliminarea duplicatelor rămân 4.997, iar setul de test are 1.000 de review-uri.
 
 ### Rulare
 1.  Asigură-te că `IMDB_cleaned.csv` este în același folder cu scriptul Python.
@@ -105,18 +105,36 @@ O clasă care încapsulează logica modelului.
 
 ## 6. Rezultate
 
-Toate rezultatele sunt pe split-ul 80/20 cu `random_state=42` (4.000 review-uri de antrenament, 1.000 de test).
+Toate rezultatele sunt pe split-ul 80/20 cu `random_state=42` (3.997 review-uri de antrenament, 1.000 de test).
 
 ### Stop words: impactul cuvintelor de sentiment
 
-Versiunea inițială a listei de stop words elimina și cuvinte ca `good`, `great`, `love`, `best`, `bad`, `never`, `nothing`, care sunt printre cele mai puternice semnale de sentiment din review-uri. Le-am scos din listă și am comparat:
+Versiunea inițială a listei de stop words elimina și cuvinte ca `good`, `great`, `love`, `best`, `bad`, `never`, `nothing`, care sunt printre cele mai puternice semnale de sentiment din review-uri, și cuvinte de contrast precum `but`. Le-am scos din listă și am comparat:
 
 | Variantă | Acuratețe (seed 42) | Media pe 10 seed-uri (0–9) |
 |---|---|---|
-| Cu cuvintele de sentiment păstrate (actual) | **84,0%** | 83,5% |
-| Cu cuvintele de sentiment eliminate (inițial) | 83,0% | 82,8% |
+| Cu cuvintele de sentiment păstrate (actual) | **83,8%** | 83,4% |
+| Cu cuvintele de sentiment eliminate (inițial) | 83,2% | 82,6% |
 
-Câștigul e mic (+0,7 puncte procentuale în medie), dar consecvent: varianta actuală a fost mai bună în 9 din 10 split-uri și egală în al zecelea. Diferența e mică pentru că modelul are multe alte cuvinte cu sentiment puternic (`excellent`, `worst`, `waste` etc.), deci eliminarea câtorva nu îl afectează mult.
+Câștigul e mic (+0,8 puncte procentuale în medie), dar consecvent: varianta actuală a fost mai bună în 9 din 10 split-uri. Diferența e mică pentru că modelul are multe alte cuvinte cu sentiment puternic (`excellent`, `worst`, `waste` etc.), deci eliminarea câtorva nu îl afectează mult.
+
+### Metrici detaliate (seed 42, varianta actuală)
+
+| | Precision | Recall | F1 |
+|---|---|---|---|
+| negative | 81,4% | 87,3% | 84,2% |
+| positive | 86,5% | 80,4% | 83,3% |
+
+Baseline-ul care prezice mereu clasa majoritară din antrenament (`negative`) are 49,6% acuratețe, deci modelul (83,8%) e cu ~34 de puncte peste.
+
+Matricea de confuzie (rânduri = real, coloane = prezis):
+
+| | negative | positive |
+|---|---|---|
+| **negative** | 433 | 63 |
+| **positive** | 99 | 405 |
+
+Modelul greșește mai des review-urile pozitive (99 clasificate ca negative) decât invers (63).
 
 ### Validare cu scikit-learn
 
@@ -124,8 +142,8 @@ Câștigul e mic (+0,7 puncte procentuale în medie), dar consecvent: varianta a
 
 | Model | Acuratețe |
 |---|---|
-| Implementarea proprie | 84,0% |
-| sklearn `MultinomialNB` | 84,0% |
+| Implementarea proprie | 83,8% |
+| sklearn `MultinomialNB` | 83,8% |
 
 Predicțiile sunt identice pentru toate cele 1.000 de review-uri. Înainte să ignorăm cuvintele care nu apar în setul de antrenament (punctul 3 din secțiunea 2), 5 predicții difereau de sklearn.
 
